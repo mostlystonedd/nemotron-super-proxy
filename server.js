@@ -1,4 +1,4 @@
-// server.js - Nemotron Super 49B Proxy for Janitor AI
+// server.js - Nemotron Super 49B Proxy (FIXED)
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -23,7 +23,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Root info
+// Root endpoint
 app.get('/', (req, res) => {
   res.json({
     name: 'Nemotron Super 49B Proxy',
@@ -51,7 +51,9 @@ app.post('/v1/chat/completions', async (req, res) => {
     const { messages, temperature, max_tokens, stream } = req.body;
     
     if (!NIM_API_KEY) {
-      return res.status(500).json({ error: { message: 'API key not configured' }});
+      return res.status(500).json({ 
+        error: { message: 'API key not configured' }
+      });
     }
     
     const nimRequest = {
@@ -61,6 +63,8 @@ app.post('/v1/chat/completions', async (req, res) => {
       max_tokens: max_tokens || 8192,
       stream: stream || false
     };
+    
+    console.log(`[${new Date().toISOString()}] Request to ${PRIMARY_MODEL}`);
     
     const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
       headers: {
@@ -72,47 +76,24 @@ app.post('/v1/chat/completions', async (req, res) => {
     });
     
     if (stream) {
+      // Handle streaming
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
       
-      response.data.pipe(res);
+      let buffer = '';
       
-    } else {
-      const openaiResponse = {
-        id: `chatcmpl-${Date.now()}`,
-        object: 'chat.completion',
-        created: Math.floor(Date.now() / 1000),
-        model: 'gpt-4o',
-        choices: response.data.choices.map(choice => ({
-          index: choice.index,
-          message: {
-            role: choice.message.role,
-            content: choice.message.content || ''
-          },
-          finish_reason: choice.finish_reason
-        })),
-        usage: response.data.usage || {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          total_tokens: 0
-        }
-      };
+      response.data.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        lines.forEach(line => {
+          if (line.trim()) {
+            res.write(line + '\n');
+          }
+        });
+      });
       
-      res.json(openaiResponse);
-    }
-    
-  } catch (error) {
-    console.error('Error:', error.message);
-    res.status(error.response?.status || 500).json({
-      error: {
-        message: error.message || 'Server error',
-        type: 'api_error'
-      }
-    });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Nemotron Super 49B running on port ${PORT}`);
-});
+      response.data.on('end', () => {
+        cons
