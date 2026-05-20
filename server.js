@@ -7,8 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
+app.use(express.json());
 
 const NIM_API_BASE = 'https://integrate.api.nvidia.com/v1';
 const NIM_API_KEY = process.env.NIM_API_KEY;
@@ -96,4 +95,65 @@ app.post('/v1/chat/completions', async (req, res) => {
       });
       
       response.data.on('end', () => {
-        cons
+        console.log(`[${new Date().toISOString()}] Stream completed`);
+        res.end();
+      });
+      
+      response.data.on('error', (err) => {
+        console.error('Stream error:', err);
+        res.end();
+      });
+      
+    } else {
+      // Handle non-streaming
+      const openaiResponse = {
+        id: `chatcmpl-${Date.now()}`,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: 'gpt-4o',
+        choices: response.data.choices.map(choice => ({
+          index: choice.index,
+          message: {
+            role: choice.message.role,
+            content: choice.message.content || ''
+          },
+          finish_reason: choice.finish_reason
+        })),
+        usage: response.data.usage || {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0
+        }
+      };
+      
+      console.log(`[${new Date().toISOString()}] Response completed`);
+      res.json(openaiResponse);
+    }
+    
+  } catch (error) {
+    console.error('Error:', error.message);
+    console.error('Details:', error.response?.data);
+    
+    res.status(error.response?.status || 500).json({
+      error: {
+        message: error.response?.data?.detail || error.message || 'Server error',
+        type: 'api_error'
+      }
+    });
+  }
+});
+
+// Catch-all 404
+app.all('*', (req, res) => {
+  res.status(404).json({
+    error: {
+      message: `Endpoint ${req.path} not found`,
+      type: 'invalid_request_error'
+    }
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Nemotron Super 49B running on port ${PORT}`);
+  console.log(`✅ Health check: http://localhost:${PORT}/health`);
+});
